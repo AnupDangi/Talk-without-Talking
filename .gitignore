@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Experiment data & models (local-only)
+jawdata/
+models/
+*.log
+
+# macOS / tooling
+.DS_Store
+.playwright-mcp/
+
+# Native build artifacts
+experiments/subvox/build/

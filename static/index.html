@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Transcript</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <div>
+          <h1>Live Transcript</h1>
+          <p class="subtitle">
+            <span id="statusDot" class="dot idle"></span>
+            <span id="statusText">Connecting…</span>
+            <span class="sep">·</span>
+            <span id="modelText">model</span>
+            <span class="sep">·</span>
+            <span id="deviceText">no source</span>
+          </p>
+        </div>
+      </div>
+      <a class="experiment-link" href="/experiment">Device experiment <span aria-hidden="true">↗</span></a>
+      <div class="badge" id="connBadge">offline</div>
+    </header>
+
+    <section class="controls">
+      <label class="field">
+        <span>Input</span>
+        <select id="deviceSelect" aria-label="Audio input device">
+          <option value="">System default</option>
+        </select>
+      </label>
+
+      <button id="toggleBtn" class="primary" type="button">Start listening</button>
+
+      <div class="spacer"></div>
+
+      <button id="clearBtn" class="ghost" type="button" title="Clear transcript">Clear</button>
+      <button id="downloadBtn" class="ghost" type="button" title="Download transcript">Download</button>
+    </section>
+
+    <div class="meter" aria-hidden="true">
+      <div id="meterFill" class="meter-fill"></div>
+    </div>
+
+    <main class="transcript-wrap">
+      <div id="errorBox" class="error hidden" role="alert"></div>
+      <div id="transcript" class="transcript" aria-live="polite">
+        <div id="emptyState" class="empty">
+          <p>Press <strong>Start listening</strong> and speak.</p>
+          <p class="muted">Audio is processed locally. Nothing is uploaded.</p>
+        </div>
+      </div>
+      <div id="partialRow" class="partial hidden">
+        <span class="time" id="partialTime"></span>
+        <span class="text" id="partialText"></span><span class="caret"></span>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>faster-whisper · on-device</span>
+      <span id="countText">0 segments</span>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

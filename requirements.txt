@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+sounddevice>=0.5,<1
+numpy>=1.26,<3
+faster-whisper>=1.1,<2
