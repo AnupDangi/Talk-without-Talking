@@ -9,10 +9,18 @@ with its MIT license; that route requires a supported motion stream.
 
 Local real-time transcription server. Your laptop microphone (or another input
 exposed by the installed PortAudio host, including Bluetooth call inputs when
-the host provides them) is captured continuously, speech is detected,
+the host provides them) can be opened on request, speech is detected,
 transcribed on-device with
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and the text
 streams to a browser UI over WebSocket.
+
+Device selection is not tied to a brand or model: the app lists the input
+endpoints exposed by PortAudio and attempts to open the selected one. It tries
+the endpoint's default rate first, then checks common sample-rate/channel
+formats if that attempt fails. This covers a broad range of microphones, but
+cannot guarantee every OS/driver/device combination will open or deliver useful
+speech audio. Transcription quality also varies by mic placement, room noise,
+bandwidth, and speech audibility.
 
 Audio never leaves the machine. The only network access is the one-time model
 download from Hugging Face.
@@ -218,6 +226,12 @@ While a headset mic is active, macOS switches it to the HFP profile, so the mic
 runs at 16 kHz and playback quality drops. That is normal. If transcription is
 poor, switch the input dropdown back to the built-in mic and use the headset
 only for audio output.
+
+The capture code now checks common alternate rates and channel counts after the
+reported default format fails. This may recover from a format mismatch, but it
+does not repair a denied permission, unavailable Bluetooth call profile, busy
+device, or host/driver failure. The earlier WH-CH720N `-9986` result is still
+unresolved and needs another user-run attempt with this updated code.
 
 ### Capture system audio ("anything playing on the laptop")
 

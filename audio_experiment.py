@@ -163,7 +163,7 @@ class AudioTrialRecorder:
         session_id = datetime.now().strftime("browser-%Y%m%d-%H%M%S-") + uuid4().hex[:6]
         session_dir = self.output_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=False)
-        rate = device.get("default_samplerate") or device.get("rate")
+        rate = device.get("samplerate") or device.get("default_samplerate") or device.get("rate")
         self._session_id = session_id
         self._session_dir = session_dir
         self._session_key = (device.get("index"), str(device["name"]))

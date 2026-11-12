@@ -49,6 +49,7 @@ END_SILENCE_SEC = 0.70       # silence that closes an utterance
 MAX_UTTERANCE_SEC = 18.0     # force-flush long monologues
 PARTIAL_EVERY_SEC = 1.0      # partial transcript cadence
 MIN_SPEECH_SEC = 0.25        # ignore shorter blips
+FALLBACK_SAMPLE_RATES = (48000, 44100, 32000, 24000, 22050, 16000, 8000)
 
 JUNK = {
     "",
@@ -98,7 +99,11 @@ class MicSource:
         self.info = {**self.info, "index": self.index}
         self.name = str(self.info["name"]).strip()
         self.label = self.name
-        self.samplerate = int(self.info["default_samplerate"])
+        try:
+            self.samplerate = int(round(float(self.info.get("default_samplerate") or 0)))
+        except (TypeError, ValueError):
+            self.samplerate = 0
+        self.channels = 1
         self.queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=600)
         self.level = 0.0
         self.level_dbfs: float | None = None
@@ -107,43 +112,102 @@ class MicSource:
         self.block_sink = None
 
     def start(self) -> None:
-        blocksize = max(128, int(self.samplerate * BLOCK_SEC))
+        formats = self._candidate_formats()
+        attempted: list[tuple[int, int]] = []
+        last_error: Exception | None = None
 
-        def callback(indata, frames, time_info, status):
-            if status:
-                self._status_error = str(status)
-            mono = np.asarray(indata[:, 0], dtype=np.float32).copy()
-            self.level_dbfs = dbfs(mono)
-            self.level = max(0.0, min(1.0, (self.level_dbfs + 60.0) / 55.0))
-            if self.block_sink is not None:
+        for samplerate, channels in formats:
+            if attempted:
                 try:
-                    self.block_sink(mono, self.samplerate)
-                except Exception as exc:
-                    self._status_error = f"experiment callback: {exc}"
-            try:
-                self.queue.put_nowait(mono)
-            except queue.Full:
-                pass  # never block the audio thread
+                    sd.check_input_settings(
+                        device=self.index,
+                        channels=channels,
+                        samplerate=samplerate,
+                        dtype="float32",
+                    )
+                except Exception:
+                    continue
 
-        try:
-            self._stream = sd.InputStream(
-                device=self.index,
-                channels=1,
-                samplerate=self.samplerate,
-                dtype="float32",
-                blocksize=blocksize,
-                latency="low",
-                callback=callback,
-            )
-            self._stream.start()
-        except Exception as exc:
+            attempted.append((samplerate, channels))
+            candidate_stream = None
+
+            def callback(indata, frames, time_info, status, *, rate=samplerate):
+                if status:
+                    self._status_error = str(status)
+                samples = np.asarray(indata, dtype=np.float32)
+                if samples.ndim == 1 or samples.shape[1] == 1:
+                    mono = samples.reshape(-1).copy()
+                else:
+                    mono = samples.mean(axis=1, dtype=np.float32)
+                self.level_dbfs = dbfs(mono)
+                self.level = max(0.0, min(1.0, (self.level_dbfs + 60.0) / 55.0))
+                if self.block_sink is not None:
+                    try:
+                        self.block_sink(mono, rate)
+                    except Exception as exc:
+                        self._status_error = f"experiment callback: {exc}"
+                try:
+                    self.queue.put_nowait(mono)
+                except queue.Full:
+                    pass  # never block the audio thread
+
+            try:
+                blocksize = max(128, int(samplerate * BLOCK_SEC))
+                candidate_stream = sd.InputStream(
+                    device=self.index,
+                    channels=channels,
+                    samplerate=samplerate,
+                    dtype="float32",
+                    blocksize=blocksize,
+                    latency="low",
+                    callback=callback,
+                )
+                candidate_stream.start()
+            except Exception as exc:
+                last_error = exc
+                if candidate_stream is not None:
+                    try:
+                        candidate_stream.close()
+                    except Exception:
+                        pass
+                continue
+
+            self._stream = candidate_stream
+            self.samplerate = samplerate
+            self.channels = channels
+            self.info = {**self.info, "samplerate": samplerate, "channels": channels}
+            break
+        else:
+            tried = ", ".join(f"{rate} Hz/{channels} ch" for rate, channels in attempted)
+            cause = str(last_error) if last_error else "no supported input format was reported"
             raise RuntimeError(
-                f"Cannot open input {self.name!r} ({self.samplerate} Hz): {exc}. "
-                "Check microphone permission for the app running this server."
-            ) from exc
+                f"Cannot open input {self.name!r}. Tried {tried or 'no formats'}; "
+                f"PortAudio reported: {cause}. Check microphone permission, "
+                "device/profile selection, whether another app is using the input, "
+                "and supported sample rate/channel formats."
+            ) from last_error
 
         if self._status_error:
             print(f"[audio] stream warning: {self._status_error}", flush=True)
+
+    def _candidate_formats(self) -> list[tuple[int, int]]:
+        try:
+            default_rate = int(round(float(self.info.get("default_samplerate") or 0)))
+        except (TypeError, ValueError):
+            default_rate = 0
+        rates = list(dict.fromkeys(
+            rate for rate in (default_rate, *FALLBACK_SAMPLE_RATES) if rate > 0
+        ))
+
+        try:
+            max_channels = int(self.info.get("max_input_channels") or 1)
+        except (TypeError, ValueError):
+            max_channels = 1
+        channels = [1]
+        for count in (2, max_channels):
+            if 1 < count <= max_channels and count not in channels:
+                channels.append(count)
+        return [(rate, count) for rate in rates for count in channels]
 
     def stop(self) -> None:
         if self._stream is not None:

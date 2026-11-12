@@ -1,5 +1,7 @@
+import json
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -62,6 +64,27 @@ class AudioTrialRecorderTests(unittest.TestCase):
         self.assertLess(result["trial"]["metrics"]["rms_db"], 0)
         self.assertIn("low_rel_db", result["trial"]["metrics"])
         self.assertEqual(recorder.state()["trial_count"], 1)
+
+    def test_session_metadata_prefers_the_opened_rate_over_the_host_default(self):
+        recorder = self.make_recorder()
+        trial = recorder.start_trial(
+            {
+                "index": 4,
+                "name": "Synthetic Input",
+                "default_samplerate": 48000,
+                "samplerate": 16000,
+            },
+            condition="still",
+            word=None,
+            duration_sec=2,
+        )
+        recorder.push_block(np.zeros(16000, dtype=np.float32), 16000)
+        recorder.stop_trial(trial["trial_id"])
+
+        session_path = next(Path(recorder.output_dir).glob("*/session.json"))
+        session = json.loads(session_path.read_text())
+
+        self.assertEqual(session["rate"], 16000)
 
     def test_silent_word_metrics_report_labeled_accuracy_and_chance(self):
         recorder = self.make_recorder()
