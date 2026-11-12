@@ -1,12 +1,11 @@
-# Talk Without Talking — live speech-to-text
+# Talk Without Talking — microphone ASR and silent-mouthing experiments
 
-> Testing the silent jaw-motion side of the project? See **[JAWLAB.md](JAWLAB.md)**
-> and run `python jawlab.py probe --device "WH-CH720N"`.
-> For the Subvox motion route, WH-CH720N compatibility, and a cross-modal test,
-> see **[SUBVOX_EXPERIMENT.md](SUBVOX_EXPERIMENT.md)**. Upstream Subvox source is
-> retained under `experiments/subvox/` with its MIT license.
-> The runnable device experiment is available at `/experiment` while the local
-> server is running.
+This repository combines a local microphone speech-to-text app with early,
+audio-only experiments into whether microphone features correlate with jaw
+movement. It does **not** currently decode silently mouthed words. The device
+experiment is available at `/experiment` while the local server is running.
+The Subvox native headphone-motion code is retained under `experiments/subvox/`
+with its MIT license; that route requires a supported motion stream.
 
 Local real-time transcription server. Your laptop microphone (or another input
 exposed by the installed PortAudio host, including Bluetooth call inputs when
@@ -44,12 +43,13 @@ python3 -m venv .venv
 ## Run
 
 ```bash
-./run.sh
+./run.sh --no-autostart
 # or
-.venv/bin/python server.py
+.venv/bin/python server.py --no-autostart
 ```
 
-Open <http://127.0.0.1:8765> and press **Start listening**.
+Open <http://127.0.0.1:8765>. The microphone stays idle until you choose
+**Start listening** or **Start microphone** in the UI.
 
 First launch downloads the model (`base.en` by default) and takes a minute.
 After that startup is ~1–2 seconds.
@@ -81,7 +81,8 @@ logging is off by default; start it explicitly while the mic is active to keep
 up to 30 minutes of derived features in the page, then export a CSV. It never
 saves raw audio. Clicking **Record trial** in JawLab is a separate opt-in that
 saves that short controlled trial locally under `jawdata/`. The monitor cannot
-recognize silently mouthed words; see [SPEC-live-signal-monitor.md](SPEC-live-signal-monitor.md).
+recognize silently mouthed words; see `signal_monitor.py` for the bounded,
+signal-only implementation.
 
 To compare inputs, connect the Bluetooth headset and refresh the inventory. If
 its microphone is listed, select it and press **Start microphone**; repeat with
@@ -109,11 +110,97 @@ needs an active microphone stream and saves local artifacts in
 silent-mouthing trials across two or more word labels. It is a pilot metric,
 not open-vocabulary silent speech recognition.
 
+## Results so far
+
+These are exploratory results from this Mac, not a validation of either
+microphone or a claim of silent-speech recognition. Trial audio and per-session
+files stay in the ignored local `jawdata/` directory; only aggregate results
+are described here.
+
+### MacBook Air microphone
+
+- The host opened the built-in input at 48 kHz. A live UI snapshot showed
+  Whisper ready/listening, 19 recognized words, and an estimated 235 WPM. That
+  is the ordinary audio transcription path: WPM is calculated from recognized
+  speech and VAD duration. It is not a count of silently mouthed words.
+- A completed 18-trial session contained 6 silent-mouthing trials (2 labeled
+  `hello`, 4 labeled `help`), plus still, jaw-open, clench, and whisper control
+  trials. Its closed-set leave-one-out result was 33.3% versus a 50% chance
+  baseline. The analyzer described this as weak, not-yet-reliable signal. The
+  labels were supplied by the person running the trials; the system did not
+  recognize those silent words.
+- A newer 9-trial session contains 3 silent `hello` labels, 3 still trials, 2
+  whisper controls, and 1 jaw-open trial. It has not met the analyzer's
+  minimum of 6 silent trials across at least 2 word labels, so it has no
+  silent-word accuracy result yet. Its current exploratory report says the
+  built-in mic did not show usable jaw-motion signal; this session had only one
+  jaw-open take, so treat that as an early negative result, not a definitive
+  hardware evaluation.
+
+### Sony WH-CH720N microphone
+
+The host listed the WH-CH720N as a mono 16 kHz input, but listing an endpoint
+does not mean PortAudio can open it. The attempted capture failed with:
+
+```text
+Cannot open input 'WH-CH720N' (16000 Hz): Error opening InputStream:
+Internal PortAudio error [PaErrorCode -9986].
+```
+
+No Sony audio was captured for this attempt, so there is no Sony transcription
+or silent-mouthing result. The server's following microphone-permission hint is
+generic; this error did not isolate whether the cause was macOS permission,
+Bluetooth/HFP routing, another app holding the device, or a PortAudio issue.
+Future attempts should verify microphone permission for the app running the
+server, select the headset's call/microphone input in system audio settings,
+close other apps using it, refresh endpoints, and retry. Record whether the
+stream actually opens and the sample rate it reports before interpreting any
+signal metrics.
+
+### What these results mean
+
+The current app transcribes sound captured by a microphone and computes
+acoustic features from that same audio stream. A microphone measures sound; its
+RMS, frequency bands, and periodicity cues cannot establish that a mouth moved
+or identify a silently mouthed word. Whisper may transcribe audible speech or
+an audible whisper, but this project has no validated silent-articulation
+sensor/decoder. In the experiment page, JawLab condition and word values are
+user-entered labels, not recognized outputs.
+
+This is different from the approach publicly described by [The Subvocal
+Company](https://subvocal.company/), which says its glasses use radio-frequency
+sensing to pick up small facial movements. The company has not published its
+full sensing architecture; see its [YC company profile](https://www.ycombinator.com/companies/the-subvocal-company/jobs).
+The WH-CH720N Bluetooth microphone and the MacBook microphone do not provide
+that RF facial-motion input, so further Whisper tuning alone will not make this
+setup decode silent mouthing.
+
+## Repeating the experiment
+
+1. Install the requirements and start the normal, capture-idle server with
+   `./run.sh --no-autostart`. For signal/JawLab measurements without loading
+   Whisper, use `./run.sh --no-transcription --no-autostart`.
+2. Open `http://127.0.0.1:8765/experiment`, click **Refresh devices**, select
+   the desired input, and click **Start microphone**. The app should remain
+   idle until this explicit action.
+3. Test the built-in mic and the WH-CH720N input separately. Record the actual
+   input name, sample rate, whether stream opening succeeded, and whether
+   audible speech/whisper was transcribed. Do not label ASR output as silent
+   mouthing.
+4. For JawLab, choose a condition and word label before each **Record trial**.
+   Collect at least 6 silent trials spanning at least 2 labels before reading
+   the closed-set accuracy/chance result. Keep the raw trials local; share only
+   aggregates unless participants explicitly agree to share recordings.
+
+Do not expect the existing microphone-only experiment to reproduce Subvocal's
+RF sensing. A silent-mouthing decoder needs a separate, suitable articulation
+sensor and a model trained and tested on that sensor's data.
+
 The browser cannot read Apple's CoreMotion headphone stream. Use the native
 Subvox app for that route and confirm that it reports `Streaming` with a
 nonzero sample rate before collecting motion trials. See
-[SUBVOX_EXPERIMENT.md](SUBVOX_EXPERIMENT.md) for the protocol and current
-platform limitations.
+[experiments/subvox/README.md](experiments/subvox/README.md) for the included
+Subvox project notes and platform limitations.
 
 ### Choose the microphone
 
